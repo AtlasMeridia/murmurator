@@ -14,18 +14,21 @@ let engine: ParticleEngine;
 // DOM elements
 const app = document.getElementById('app')!;
 
-// Helper to create slider with input field
+// Helper to create slider with input field and info tooltip
 function createSlider(id: string, stateKey: string, label: string): string {
   const def = getParameterDef(stateKey);
   const value = stateStore.get(stateKey);
   const min = def?.min ?? 0;
   const max = def?.max ?? 100;
   const step = def?.step ?? 1;
+  const description = def?.description ?? '';
+
+  const infoIcon = description ? `<span class="info-icon" data-tooltip="${description}">i</span>` : '';
 
   return `
     <div class="slider-control">
       <label>
-        <span>${label}</span>
+        <span class="label-with-info">${label}${infoIcon}</span>
         <input type="text" class="value-input" id="input-${id}" value="${value}" data-key="${stateKey}">
       </label>
       <input type="range" id="slider-${id}" min="${min}" max="${max}" step="${step}" value="${value}" data-key="${stateKey}">
@@ -33,9 +36,13 @@ function createSlider(id: string, stateKey: string, label: string): string {
   `;
 }
 
-// Helper to create enum selector
+// Helper to create enum selector with info tooltip
 function createEnumSelector(id: string, stateKey: string, label: string, options: string[]): string {
+  const def = getParameterDef(stateKey);
   const currentValue = stateStore.get(stateKey);
+  const description = def?.description ?? '';
+
+  const infoIcon = description ? `<span class="info-icon" data-tooltip="${description}">i</span>` : '';
 
   const buttons = options.map(opt =>
     `<button data-value="${opt}" class="${opt === currentValue ? 'active' : ''}">${opt}</button>`
@@ -43,7 +50,7 @@ function createEnumSelector(id: string, stateKey: string, label: string, options
 
   return `
     <div class="enum-control">
-      <span class="enum-label">${label}</span>
+      <span class="enum-label">${label}${infoIcon}</span>
       <div class="enum-selector" id="enum-${id}" data-key="${stateKey}">
         ${buttons}
       </div>
@@ -66,8 +73,7 @@ function createUI(): void {
         </div>
         <div class="section-content" id="section-playback">
           <div class="playback-controls">
-            <button class="btn btn-icon" id="btn-play" title="Play">▶</button>
-            <button class="btn btn-icon" id="btn-pause" title="Pause">⏸</button>
+            <button class="btn btn-icon" id="btn-playpause" title="Play/Pause">▶</button>
             <button class="btn btn-icon" id="btn-reset" title="Reset">↺</button>
           </div>
           <div class="stats" id="stats">
@@ -257,11 +263,24 @@ function setupEventListeners(): void {
   });
 
   // Playback controls
-  document.getElementById('btn-play')!.addEventListener('click', () => engine.start());
-  document.getElementById('btn-pause')!.addEventListener('click', () => engine.stop());
+  const playPauseBtn = document.getElementById('btn-playpause')!;
+  playPauseBtn.addEventListener('click', () => {
+    if (engine.isRunning()) {
+      engine.stop();
+      playPauseBtn.textContent = '▶';
+      playPauseBtn.title = 'Play';
+    } else {
+      engine.start();
+      playPauseBtn.textContent = '⏸';
+      playPauseBtn.title = 'Pause';
+    }
+  });
+
   document.getElementById('btn-reset')!.addEventListener('click', () => {
     engine.reset();
     engine.start();
+    playPauseBtn.textContent = '⏸';
+    playPauseBtn.title = 'Pause';
   });
 
   // Aspect ratio buttons
@@ -421,3 +440,7 @@ setupEventListeners();
 
 // Initial stats
 document.getElementById('stat-particles')!.textContent = stateStore.get<number>('particles.count').toString();
+
+// Set initial play/pause button state (engine starts running)
+document.getElementById('btn-playpause')!.textContent = '⏸';
+document.getElementById('btn-playpause')!.title = 'Pause';
