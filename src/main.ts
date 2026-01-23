@@ -14,21 +14,18 @@ let engine: ParticleEngine;
 // DOM elements
 const app = document.getElementById('app')!;
 
-// Helper to create slider with input field and info tooltip
+// Helper to create slider with input field
 function createSlider(id: string, stateKey: string, label: string): string {
   const def = getParameterDef(stateKey);
   const value = stateStore.get(stateKey);
   const min = def?.min ?? 0;
   const max = def?.max ?? 100;
   const step = def?.step ?? 1;
-  const description = def?.description ?? '';
-
-  const infoIcon = description ? `<span class="info-icon" data-tooltip="${description}">i</span>` : '';
 
   return `
     <div class="slider-control">
       <label>
-        <span class="label-with-info">${label}${infoIcon}</span>
+        <span>${label}</span>
         <input type="text" class="value-input" id="input-${id}" value="${value}" data-key="${stateKey}">
       </label>
       <input type="range" id="slider-${id}" min="${min}" max="${max}" step="${step}" value="${value}" data-key="${stateKey}">
@@ -36,13 +33,9 @@ function createSlider(id: string, stateKey: string, label: string): string {
   `;
 }
 
-// Helper to create enum selector with info tooltip
+// Helper to create enum selector
 function createEnumSelector(id: string, stateKey: string, label: string, options: string[]): string {
-  const def = getParameterDef(stateKey);
   const currentValue = stateStore.get(stateKey);
-  const description = def?.description ?? '';
-
-  const infoIcon = description ? `<span class="info-icon" data-tooltip="${description}">i</span>` : '';
 
   const buttons = options.map(opt =>
     `<button data-value="${opt}" class="${opt === currentValue ? 'active' : ''}">${opt}</button>`
@@ -50,7 +43,7 @@ function createEnumSelector(id: string, stateKey: string, label: string, options
 
   return `
     <div class="enum-control">
-      <span class="enum-label">${label}${infoIcon}</span>
+      <span class="enum-label">${label}</span>
       <div class="enum-selector" id="enum-${id}" data-key="${stateKey}">
         ${buttons}
       </div>
