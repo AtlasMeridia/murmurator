@@ -7,6 +7,7 @@ import { eventBus } from './core/events/EventBus.ts';
 import { EventTypes } from './core/events/EventTypes.ts';
 import { parseAspectRatio } from './utils/math.ts';
 import { getParameterDef } from './core/state/Parameters.ts';
+import { ConsoleAPI } from './api/ConsoleAPI.ts';
 
 // Application state
 let engine: ParticleEngine;
@@ -430,6 +431,11 @@ function takeScreenshot(): void {
 createUI();
 initEngine();
 setupEventListeners();
+
+// Expose debugging API
+// Note: engine is guaranteed to be assigned by initEngine() above
+const consoleApi = new ConsoleAPI(engine!, stateStore, eventBus);
+(window as any).murmurator = consoleApi;
 
 // Initial stats
 document.getElementById('stat-particles')!.textContent = stateStore.get<number>('particles.count').toString();
