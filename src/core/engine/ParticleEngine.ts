@@ -8,8 +8,13 @@ import { eventBus } from '../events/EventBus.ts';
 import { EventTypes } from '../events/EventTypes.ts';
 import { SeededRandom } from '../../utils/random.ts';
 
-// WebGPU imports (conditional)
-import { isWebGPUSupported, GPUParticleBuffer, GPURenderer, GPUPhysics } from './webgpu/index.ts';
+// WebGPU imports - only detection functions, actual classes loaded dynamically
+import { isWebGPUSupported, checkWebGPUAvailable } from './webgpu/index.ts';
+
+// Types for dynamically loaded WebGPU classes
+type GPUParticleBufferType = import('./webgpu/GPUParticleBuffer.ts').GPUParticleBuffer;
+type GPURendererType = import('./webgpu/GPURenderer.ts').GPURenderer;
+type GPUPhysicsType = import('./webgpu/GPUPhysics.ts').GPUPhysics;
 
 export interface ParticleEngineConfig {
   canvas?: HTMLCanvasElement;
@@ -30,10 +35,12 @@ export class ParticleEngine {
   private physics: Physics | null = null;
   private renderer: Renderer | null = null;
 
-  // GPU-based (WebGPU)
-  private gpuParticles: GPUParticleBuffer | null = null;
-  private gpuPhysics: GPUPhysics | null = null;
-  private gpuRenderer: GPURenderer | null = null;
+  // GPU-based (WebGPU) - types imported dynamically
+  private gpuParticles: GPUParticleBufferType | null = null;
+  private gpuPhysics: GPUPhysicsType | null = null;
+  private gpuRenderer: GPURendererType | null = null;
+  // Constructor stored after dynamic import for reinit
+  private GPUParticleBufferClass: (new (count: number) => GPUParticleBufferType) | null = null;
 
   // Mode
   private useWebGPU: boolean = false;
@@ -56,12 +63,12 @@ export class ParticleEngine {
     this.random = new SeededRandom(Date.now());
     this.config = config;
 
-    // Check WebGPU support
-    this.useWebGPU = !config.forceWebGL && isWebGPUSupported();
+    // Check basic WebGPU support (sync check)
+    const maybeWebGPU = !config.forceWebGL && isWebGPUSupported();
 
-    if (this.useWebGPU) {
-      // Async WebGPU initialization
-      this.initPromise = this.initWebGPU();
+    if (maybeWebGPU) {
+      // Async WebGPU initialization with fallback
+      this.initPromise = this.initWithFallback();
     } else {
       // Synchronous WebGL initialization
       this.initWebGL();
@@ -71,6 +78,29 @@ export class ParticleEngine {
     this.state.subscribe('particles.count', (_key, value) => {
       this.reinitializeParticles(value as number);
     });
+  }
+
+  /**
+   * Try WebGPU, fall back to WebGL if it fails.
+   */
+  private async initWithFallback(): Promise<void> {
+    // Actually check if WebGPU will work
+    const webgpuAvailable = await checkWebGPUAvailable();
+
+    if (webgpuAvailable) {
+      try {
+        await this.initWebGPU();
+        this.useWebGPU = true;
+        return;
+      } catch (e) {
+        console.warn('WebGPU initialization failed, falling back to WebGL:', e);
+      }
+    }
+
+    // Fall back to WebGL
+    console.log('Using WebGL fallback');
+    this.useWebGPU = false;
+    this.initWebGL();
   }
 
   /**
@@ -96,9 +126,24 @@ export class ParticleEngine {
 
   /**
    * Initialize WebGPU (GPU) path.
+   * Uses dynamic imports to avoid loading WebGPU code on unsupported contexts.
    */
   private async initWebGPU(): Promise<void> {
     const count = this.state.get<number>('particles.count');
+
+    // Dynamically import WebGPU modules
+    const [
+      { GPUParticleBuffer },
+      { GPURenderer },
+      { GPUPhysics },
+    ] = await Promise.all([
+      import('./webgpu/GPUParticleBuffer.ts'),
+      import('./webgpu/GPURenderer.ts'),
+      import('./webgpu/GPUPhysics.ts'),
+    ]);
+
+    // Store constructor for reinit
+    this.GPUParticleBufferClass = GPUParticleBuffer;
 
     // Create GPU particle buffer
     this.gpuParticles = new GPUParticleBuffer(count);
@@ -258,12 +303,12 @@ export class ParticleEngine {
   }
 
   private reinitializeParticles(newCount: number): void {
-    if (this.useWebGPU) {
+    if (this.useWebGPU && this.GPUParticleBufferClass) {
       // GPU path
       if (this.gpuParticles) {
         this.gpuParticles.dispose();
       }
-      this.gpuParticles = new GPUParticleBuffer(newCount);
+      this.gpuParticles = new this.GPUParticleBufferClass(newCount);
       this.initializeParticlesGPU();
 
       if (this.gpuPhysics) {

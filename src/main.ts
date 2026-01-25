@@ -8,7 +8,7 @@ import { EventTypes } from './core/events/EventTypes.ts';
 import { parseAspectRatio } from './utils/math.ts';
 import { getParameterDef } from './core/state/Parameters.ts';
 import { ConsoleAPI } from './api/ConsoleAPI.ts';
-import { isWebGPUSupported, getWebGPUSupportMessage } from './core/engine/webgpu/index.ts';
+import { isWebGPUSupported, isSecureContext, getWebGPUSupportMessage } from './core/engine/webgpu/index.ts';
 
 // Application state
 let engine: ParticleEngine;
@@ -227,32 +227,43 @@ async function initEngine(): Promise<void> {
   const viewport = document.getElementById('viewport')!;
   const { width, height } = calculateCanvasSize();
 
-  // Check WebGPU support and show status
-  const webgpuSupported = isWebGPUSupported();
-  console.log(webgpuSupported
-    ? '🚀 WebGPU supported - using GPU compute for physics'
-    : '⚠️ WebGPU not supported - falling back to CPU physics'
-  );
-
-  // Show WebGPU status in UI
+  // Show initial loading status
   const statsDiv = document.getElementById('stats');
   if (statsDiv) {
     const modeRow = document.createElement('div');
     modeRow.className = 'stats-row';
     modeRow.innerHTML = `
       <span>Mode:</span>
-      <span id="stat-mode" style="color: ${webgpuSupported ? '#4ade80' : '#fbbf24'}">${webgpuSupported ? 'WebGPU' : 'WebGL'}</span>
+      <span id="stat-mode" style="color: #94a3b8">Loading...</span>
     `;
     statsDiv.appendChild(modeRow);
   }
+
+  // Log basic support info
+  const basicSupport = isWebGPUSupported();
+  const secureCtx = isSecureContext();
+  console.log(`WebGPU API present: ${basicSupport}, Secure context: ${secureCtx}`);
 
   engine = new ParticleEngine(stateStore, {
     width,
     height,
   });
 
-  // Wait for async initialization (WebGPU)
+  // Wait for async initialization (WebGPU with fallback)
   await engine.ready();
+
+  // Update mode indicator based on actual mode
+  const actualMode = engine.isWebGPUMode();
+  const modeSpan = document.getElementById('stat-mode');
+  if (modeSpan) {
+    modeSpan.textContent = actualMode ? 'WebGPU' : 'WebGL';
+    modeSpan.style.color = actualMode ? '#4ade80' : '#fbbf24';
+  }
+
+  console.log(actualMode
+    ? '🚀 WebGPU initialized - using GPU compute for physics'
+    : '⚠️ Using WebGL fallback - CPU physics'
+  );
 
   viewport.appendChild(engine.getCanvas());
   engine.start();

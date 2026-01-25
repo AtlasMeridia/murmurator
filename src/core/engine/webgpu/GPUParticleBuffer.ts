@@ -1,22 +1,20 @@
 // GPU-resident particle buffer using TSL storage buffers
 
-import {
-  instancedArray,
-  storage,
-} from 'three/tsl';
+import { storage } from 'three/tsl';
+import { StorageInstancedBufferAttribute } from 'three/webgpu';
 
 /**
  * GPU-resident particle data storage.
- * Uses TSL instancedArray for compute shader access.
+ * Uses StorageInstancedBufferAttribute for compute shader access.
  */
 export class GPUParticleBuffer {
   readonly count: number;
 
-  // Storage buffers (GPU-resident) - these are TSL nodes
-  private _positionsBuffer: any;
-  private _velocitiesBuffer: any;
-  private _sizesBuffer: any;
-  private _agesBuffer: any;
+  // Storage buffer attributes (GPU-resident)
+  private _positionsAttr: StorageInstancedBufferAttribute;
+  private _velocitiesAttr: StorageInstancedBufferAttribute;
+  private _sizesAttr: StorageInstancedBufferAttribute;
+  private _agesAttr: StorageInstancedBufferAttribute;
 
   // TSL storage nodes for compute shaders
   readonly positionsStorage: any;
@@ -24,107 +22,94 @@ export class GPUParticleBuffer {
   readonly sizesStorage: any;
   readonly agesStorage: any;
 
-  // CPU-side arrays for initialization and readback
-  private _positionsArray: Float32Array;
-  private _velocitiesArray: Float32Array;
-  private _sizesArray: Float32Array;
-  private _agesArray: Float32Array;
-
   constructor(count: number) {
     this.count = count;
 
-    // Create CPU-side arrays
-    this._positionsArray = new Float32Array(count * 2);
-    this._velocitiesArray = new Float32Array(count * 2);
-    this._sizesArray = new Float32Array(count);
-    this._agesArray = new Float32Array(count);
-
-    // Create GPU storage buffers using instancedArray
-    // positions: vec2 per particle (x, y)
-    this._positionsBuffer = instancedArray(this._positionsArray, 'vec2');
-    this._velocitiesBuffer = instancedArray(this._velocitiesArray, 'vec2');
-    this._sizesBuffer = instancedArray(this._sizesArray, 'float');
-    this._agesBuffer = instancedArray(this._agesArray, 'float');
+    // Create storage buffer attributes directly
+    // positions: vec2 per particle (x, y) - itemSize = 2
+    this._positionsAttr = new StorageInstancedBufferAttribute(new Float32Array(count * 2), 2);
+    this._velocitiesAttr = new StorageInstancedBufferAttribute(new Float32Array(count * 2), 2);
+    this._sizesAttr = new StorageInstancedBufferAttribute(new Float32Array(count), 1);
+    this._agesAttr = new StorageInstancedBufferAttribute(new Float32Array(count), 1);
 
     // Create storage nodes for compute shader access
-    this.positionsStorage = storage(this._positionsBuffer, 'vec2', count);
-    this.velocitiesStorage = storage(this._velocitiesBuffer, 'vec2', count);
-    this.sizesStorage = storage(this._sizesBuffer, 'float', count);
-    this.agesStorage = storage(this._agesBuffer, 'float', count);
+    this.positionsStorage = storage(this._positionsAttr, 'vec2', count);
+    this.velocitiesStorage = storage(this._velocitiesAttr, 'vec2', count);
+    this.sizesStorage = storage(this._sizesAttr, 'float', count);
+    this.agesStorage = storage(this._agesAttr, 'float', count);
   }
 
   /**
-   * Get the positions buffer for mesh binding.
+   * Get the positions attribute for mesh binding.
    */
-  get positionsAttribute(): any {
-    return this._positionsBuffer;
+  get positionsAttribute(): StorageInstancedBufferAttribute {
+    return this._positionsAttr;
   }
 
   /**
-   * Get the sizes buffer for mesh binding.
+   * Get the sizes attribute for mesh binding.
    */
-  get sizesAttribute(): any {
-    return this._sizesBuffer;
+  get sizesAttribute(): StorageInstancedBufferAttribute {
+    return this._sizesAttr;
   }
 
   /**
-   * Get CPU-side positions array for initialization.
+   * Get positions array for initialization.
    */
   get positions(): Float32Array {
-    return this._positionsArray;
+    return this._positionsAttr.array as Float32Array;
   }
 
   /**
-   * Get CPU-side velocities array for initialization.
+   * Get velocities array for initialization.
    */
   get velocities(): Float32Array {
-    return this._velocitiesArray;
+    return this._velocitiesAttr.array as Float32Array;
   }
 
   /**
-   * Get CPU-side sizes array for initialization.
+   * Get sizes array for initialization.
    */
   get sizes(): Float32Array {
-    return this._sizesArray;
+    return this._sizesAttr.array as Float32Array;
   }
 
   /**
-   * Get CPU-side ages array for initialization.
+   * Get ages array for initialization.
    */
   get ages(): Float32Array {
-    return this._agesArray;
+    return this._agesAttr.array as Float32Array;
   }
 
   /**
-   * Set position at index (CPU-side, call uploadToGPU after).
+   * Set position at index.
    */
   setPosition(index: number, x: number, y: number): void {
     const i2 = index * 2;
-    this._positionsArray[i2] = x;
-    this._positionsArray[i2 + 1] = y;
+    const arr = this._positionsAttr.array as Float32Array;
+    arr[i2] = x;
+    arr[i2 + 1] = y;
   }
 
   /**
-   * Set velocity at index (CPU-side, call uploadToGPU after).
+   * Set velocity at index.
    */
   setVelocity(index: number, vx: number, vy: number): void {
     const i2 = index * 2;
-    this._velocitiesArray[i2] = vx;
-    this._velocitiesArray[i2 + 1] = vy;
+    const arr = this._velocitiesAttr.array as Float32Array;
+    arr[i2] = vx;
+    arr[i2 + 1] = vy;
   }
 
   /**
-   * Upload CPU arrays to GPU buffers.
+   * Mark buffers as needing GPU upload.
    * Call after initializing particle data.
    */
   uploadToGPU(): void {
-    // The buffers need to be marked for update
-    if (this._positionsBuffer.needsUpdate !== undefined) {
-      this._positionsBuffer.needsUpdate = true;
-      this._velocitiesBuffer.needsUpdate = true;
-      this._sizesBuffer.needsUpdate = true;
-      this._agesBuffer.needsUpdate = true;
-    }
+    this._positionsAttr.needsUpdate = true;
+    this._velocitiesAttr.needsUpdate = true;
+    this._sizesAttr.needsUpdate = true;
+    this._agesAttr.needsUpdate = true;
   }
 
   /**

@@ -5,12 +5,17 @@ export { Renderer } from './Renderer.ts';
 export type { ParticleData } from './Particle.ts';
 export type { ParticleEngineConfig, FrameInfo } from './ParticleEngine.ts';
 
-// WebGPU exports
+// WebGPU exports - only detection functions, classes loaded dynamically
 export {
   isWebGPUSupported,
+  isSecureContext,
+  checkWebGPUAvailable,
   getWebGPUSupportMessage,
+} from './webgpu/index.ts';
+export type {
   GPUParticleBuffer,
   GPURenderer,
   GPUPhysics,
+  GPURendererConfig,
+  GPUPhysicsConfig,
 } from './webgpu/index.ts';
-export type { GPURendererConfig, GPUPhysicsConfig } from './webgpu/index.ts';

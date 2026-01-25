@@ -8,6 +8,7 @@ import {
   uniform,
   instanceIndex,
   color as colorNode,
+  positionLocal,
 } from 'three/tsl';
 import type { GPUParticleBuffer } from './GPUParticleBuffer.ts';
 import type { StateStore } from '../../state/StateStore.ts';
@@ -150,6 +151,10 @@ export class GPURenderer {
     // Create geometry
     const geometry = this.createGeometry(this.currentShape);
 
+    // Attach positions as instanced attribute
+    // This allows the geometry to read positions directly from the storage buffer
+    geometry.setAttribute('instancePosition', buffer.positionsAttribute);
+
     // Create node material that reads from storage buffers
     const material = new MeshBasicNodeMaterial({
       colorNode: this.colorUniform,
@@ -161,12 +166,17 @@ export class GPURenderer {
     // Create instanced mesh
     this.particles = new THREE.InstancedMesh(geometry, material, buffer.count);
     this.particles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.particles.frustumCulled = false; // Important for particles
 
-    // Override the position in the material using TSL
-    // Read positions directly from the storage buffer
+    // Override position: scale local geometry by particle size, then add instance position
+    // positionLocal is the original geometry vertex
+    // instancePos is the particle center from storage buffer
+    const instancePos = buffer.positionsStorage.element(instanceIndex);
+    const scaledLocal = positionLocal.mul(this.baseSizeUniform);
+
     material.positionNode = vec3(
-      buffer.positionsStorage.element(instanceIndex).x,
-      buffer.positionsStorage.element(instanceIndex).y,
+      scaledLocal.x.add(instancePos.x),
+      scaledLocal.y.add(instancePos.y),
       float(0)
     );
 
