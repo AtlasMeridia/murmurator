@@ -288,6 +288,19 @@ export const PARAMETER_DEFINITIONS: ParameterDef[] = [
     description: 'How particles behave at canvas edges',
   },
 
+  // Rendering
+  {
+    key: 'rendering.tracers',
+    label: 'Tracers',
+    type: 'number',
+    default: 0,
+    min: 0,
+    max: 0.98,
+    step: 0.02,
+    category: 'rendering',
+    description: 'Trail persistence (0 = off, higher = longer trails)',
+  },
+
   // Viewport
   {
     key: 'viewport.aspectRatio',

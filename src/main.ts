@@ -165,6 +165,7 @@ function createUI(): void {
               ${createSlider('turbulence', 'physics.turbulence', 'Turbulence')}
               ${createSlider('attraction', 'physics.attractor.strength', 'Attraction')}
               ${createEnumSelector('bounds', 'simulation.bounds', 'Bounds', ['wrap', 'bounce', 'none'])}
+              ${createSlider('tracers', 'rendering.tracers', 'Tracers')}
             </div>
           </div>
         </div>

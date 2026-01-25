@@ -25,6 +25,10 @@ export class Renderer {
   private currentShape: ParticleShape = 'circle';
   private particleBuffer: ParticleBuffer | null = null;
 
+  // Tracer effect
+  private fadeQuad: THREE.Mesh | null = null;
+  private fadeMaterial: THREE.MeshBasicMaterial | null = null;
+
   // Reusable objects to avoid GC
   private dummy = new THREE.Object3D();
   private color = new THREE.Color();
@@ -59,6 +63,24 @@ export class Renderer {
         this.initializeParticles(this.particleBuffer);
       }
     });
+
+    // Create fade quad for tracer effect
+    this.createFadeQuad();
+  }
+
+  private createFadeQuad(): void {
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    this.fadeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.1,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.fadeQuad = new THREE.Mesh(geometry, this.fadeMaterial);
+    this.fadeQuad.position.z = 50; // In front of camera but behind particles
+    this.fadeQuad.frustumCulled = false;
+    this.fadeQuad.visible = false;
   }
 
   private createGeometry(shape: ParticleShape): THREE.BufferGeometry {
@@ -176,11 +198,47 @@ export class Renderer {
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    const tracerStrength = this.state.get<number>('rendering.tracers') ?? 0;
+
+    if (tracerStrength > 0 && this.fadeQuad && this.fadeMaterial) {
+      // Enable tracer mode
+      this.renderer.autoClear = false;
+      this.scene.background = null;
+
+      // Update fade opacity (lower opacity = longer trails)
+      this.fadeMaterial.opacity = 1 - tracerStrength;
+      this.fadeQuad.visible = true;
+
+      // Render fade quad first (attached to camera so it covers screen)
+      this.camera.add(this.fadeQuad);
+      this.fadeQuad.position.set(0, 0, -50);
+
+      // Render scene (fade quad fades previous frame, then particles render on top)
+      this.renderer.render(this.scene, this.camera);
+
+      this.camera.remove(this.fadeQuad);
+    } else {
+      // Normal render mode
+      this.renderer.autoClear = true;
+      if (!this.scene.background) {
+        this.scene.background = new THREE.Color(0x000000);
+      }
+      if (this.fadeQuad) {
+        this.fadeQuad.visible = false;
+      }
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   setBackgroundColor(color: string | number): void {
     (this.scene.background as THREE.Color).set(color);
+  }
+
+  // Clear the canvas (useful when resetting with tracers enabled)
+  clear(): void {
+    this.renderer.autoClear = true;
+    this.scene.background = new THREE.Color(0x000000);
+    this.renderer.clear();
   }
 
   dispose(): void {

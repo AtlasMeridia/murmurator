@@ -178,6 +178,7 @@ export class ParticleEngine {
     this.frameCount = 0;
     this.random = new SeededRandom(Date.now());
     this.initializeParticles();
+    this.renderer.clear(); // Clear tracer trails
     this.renderer.render();
     eventBus.publish(EventTypes.ENGINE_STATE, { state: 'reset' });
   }
