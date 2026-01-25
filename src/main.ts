@@ -8,6 +8,7 @@ import { EventTypes } from './core/events/EventTypes.ts';
 import { parseAspectRatio } from './utils/math.ts';
 import { getParameterDef } from './core/state/Parameters.ts';
 import { ConsoleAPI } from './api/ConsoleAPI.ts';
+import { isWebGPUSupported, getWebGPUSupportMessage } from './core/engine/webgpu/index.ts';
 
 // Application state
 let engine: ParticleEngine;
@@ -147,7 +148,7 @@ function createUI(): void {
         </div>
         <div class="section-content" id="section-physics">
           ${createSlider('noise', 'physics.noise.strength', 'Noise Strength')}
-          ${createSlider('damping', 'physics.damping', 'Damping')}
+          ${createSlider('tracers', 'rendering.tracers', 'Tracers')}
           ${createSlider('speed', 'simulation.speed', 'Speed')}
 
           <!-- Advanced Physics -->
@@ -165,7 +166,7 @@ function createUI(): void {
               ${createSlider('turbulence', 'physics.turbulence', 'Turbulence')}
               ${createSlider('attraction', 'physics.attractor.strength', 'Attraction')}
               ${createEnumSelector('bounds', 'simulation.bounds', 'Bounds', ['wrap', 'bounce', 'none'])}
-              ${createSlider('tracers', 'rendering.tracers', 'Tracers')}
+              ${createSlider('damping', 'physics.damping', 'Damping')}
             </div>
           </div>
         </div>
@@ -222,14 +223,36 @@ function calculateCanvasSize(): { width: number; height: number } {
 }
 
 // Initialize the particle engine
-function initEngine(): void {
+async function initEngine(): Promise<void> {
   const viewport = document.getElementById('viewport')!;
   const { width, height } = calculateCanvasSize();
+
+  // Check WebGPU support and show status
+  const webgpuSupported = isWebGPUSupported();
+  console.log(webgpuSupported
+    ? '🚀 WebGPU supported - using GPU compute for physics'
+    : '⚠️ WebGPU not supported - falling back to CPU physics'
+  );
+
+  // Show WebGPU status in UI
+  const statsDiv = document.getElementById('stats');
+  if (statsDiv) {
+    const modeRow = document.createElement('div');
+    modeRow.className = 'stats-row';
+    modeRow.innerHTML = `
+      <span>Mode:</span>
+      <span id="stat-mode" style="color: ${webgpuSupported ? '#4ade80' : '#fbbf24'}">${webgpuSupported ? 'WebGPU' : 'WebGL'}</span>
+    `;
+    statsDiv.appendChild(modeRow);
+  }
 
   engine = new ParticleEngine(stateStore, {
     width,
     height,
   });
+
+  // Wait for async initialization (WebGPU)
+  await engine.ready();
 
   viewport.appendChild(engine.getCanvas());
   engine.start();
@@ -429,18 +452,49 @@ function takeScreenshot(): void {
 }
 
 // Initialize
-createUI();
-initEngine();
-setupEventListeners();
+async function init(): Promise<void> {
+  createUI();
+  await initEngine();
+  setupEventListeners();
 
-// Expose debugging API
-// Note: engine is guaranteed to be assigned by initEngine() above
-const consoleApi = new ConsoleAPI(engine!, stateStore, eventBus);
-(window as any).murmurator = consoleApi;
+  // Expose debugging API
+  const consoleApi = new ConsoleAPI(engine!, stateStore, eventBus);
+  (window as any).murmurator = consoleApi;
 
-// Initial stats
-document.getElementById('stat-particles')!.textContent = stateStore.get<number>('particles.count').toString();
+  // Initial stats
+  document.getElementById('stat-particles')!.textContent = stateStore.get<number>('particles.count').toString();
 
-// Set initial play/pause button state (engine starts running)
-document.getElementById('btn-playpause')!.textContent = '⏸';
-document.getElementById('btn-playpause')!.title = 'Pause';
+  // Set initial play/pause button state (engine starts running)
+  document.getElementById('btn-playpause')!.textContent = '⏸';
+  document.getElementById('btn-playpause')!.title = 'Pause';
+}
+
+// Run initialization
+init().catch((error) => {
+  console.error('Failed to initialize:', error);
+
+  // Show error message to user
+  const viewport = document.getElementById('viewport');
+  if (viewport) {
+    viewport.innerHTML = `
+      <div style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #ef4444;
+        text-align: center;
+        padding: 20px;
+      ">
+        <h2 style="margin-bottom: 10px;">Initialization Error</h2>
+        <p style="color: #94a3b8; max-width: 400px;">
+          ${error.message || 'Failed to initialize the particle engine.'}
+        </p>
+        <p style="color: #64748b; font-size: 0.875rem; margin-top: 20px;">
+          ${getWebGPUSupportMessage()}
+        </p>
+      </div>
+    `;
+  }
+});
