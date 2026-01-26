@@ -9,6 +9,7 @@ import { parseAspectRatio } from './utils/math.ts';
 import { getParameterDef } from './core/state/Parameters.ts';
 import { ConsoleAPI } from './api/ConsoleAPI.ts';
 import { isWebGPUSupported, isSecureContext, getWebGPUSupportMessage } from './core/engine/webgpu/index.ts';
+import { PRESETS } from './core/state/presets.ts';
 
 // Application state
 let engine: ParticleEngine;
@@ -60,6 +61,25 @@ function createUI(): void {
       <!-- Canvas will be inserted here -->
     </div>
     <div class="control-panel">
+      <!-- Presets Section -->
+      <div class="panel-section">
+        <div class="section-header" data-section="presets">
+          <div class="section-title">Presets</div>
+          <span class="section-toggle">▼</span>
+        </div>
+        <div class="section-content" id="section-presets">
+          <div class="preset-actions">
+            <button class="btn" id="btn-export">Export</button>
+            <button class="btn" id="btn-import">Import</button>
+            <button class="btn" id="btn-defaults">Defaults</button>
+            <input type="file" id="import-file" accept=".json" style="display: none;">
+          </div>
+          <div class="preset-list">
+            ${PRESETS.map(p => `<button class="btn preset-btn" data-preset="${p.name}" title="${p.description}">${p.name}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+
       <!-- Playback Section -->
       <div class="panel-section">
         <div class="section-header" data-section="playback">
@@ -400,6 +420,9 @@ function setupEventListeners(): void {
   // Screenshot
   document.getElementById('btn-screenshot')!.addEventListener('click', takeScreenshot);
 
+  // Preset controls
+  setupPresetControls();
+
   // Window resize
   window.addEventListener('resize', () => {
     resizeCanvas();
@@ -460,6 +483,105 @@ function takeScreenshot(): void {
     }
     if (wasRunning) engine.start();
   });
+}
+
+// Setup preset import/export controls
+function setupPresetControls(): void {
+  const importInput = document.getElementById('import-file') as HTMLInputElement;
+
+  // Export button
+  document.getElementById('btn-export')!.addEventListener('click', () => {
+    const name = prompt('Preset name:', 'My Preset') || 'Untitled';
+    const json = stateStore.exportSettings(name);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `murmurator-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Import button
+  document.getElementById('btn-import')!.addEventListener('click', () => {
+    importInput.click();
+  });
+
+  // File input change handler
+  importInput.addEventListener('change', () => {
+    const file = importInput.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const error = stateStore.importSettings(reader.result as string);
+      if (error) {
+        alert(`Import failed: ${error}`);
+      } else {
+        updateUIFromState();
+        engine.reset(); // Clear canvas and respawn particles
+      }
+    };
+    reader.readAsText(file);
+    importInput.value = ''; // Reset for next import
+  });
+
+  // Defaults button
+  document.getElementById('btn-defaults')!.addEventListener('click', () => {
+    if (confirm('Reset all parameters to defaults?')) {
+      stateStore.resetToDefaults();
+      updateUIFromState();
+      engine.reset(); // Clear canvas and respawn particles
+    }
+  });
+
+  // Built-in preset buttons
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const presetName = (btn as HTMLElement).dataset.preset!;
+      const preset = PRESETS.find(p => p.name === presetName);
+      if (preset) {
+        for (const [key, value] of Object.entries(preset.settings)) {
+          stateStore.set(key, value);
+        }
+        updateUIFromState();
+        engine.reset(); // Clear canvas and respawn particles
+      }
+    });
+  });
+}
+
+// Update all UI controls to match current state
+function updateUIFromState(): void {
+  // Update sliders and their input fields
+  document.querySelectorAll('.slider-control input[type="range"]').forEach(slider => {
+    const rangeInput = slider as HTMLInputElement;
+    const stateKey = rangeInput.dataset.key!;
+    const id = rangeInput.id.replace('slider-', '');
+    const textInput = document.getElementById(`input-${id}`) as HTMLInputElement;
+    const def = getParameterDef(stateKey);
+
+    const value = stateStore.get(stateKey);
+    rangeInput.value = String(value);
+    textInput.value = formatValue(value as number, def?.step);
+  });
+
+  // Update enum selectors
+  document.querySelectorAll('.enum-selector').forEach(selector => {
+    const stateKey = (selector as HTMLElement).dataset.key!;
+    const currentValue = stateStore.get(stateKey);
+
+    selector.querySelectorAll('button').forEach(btn => {
+      const btnValue = (btn as HTMLElement).dataset.value!;
+      btn.classList.toggle('active', btnValue === currentValue);
+    });
+  });
+
+  // Update color picker
+  const colorInput = document.getElementById('input-color') as HTMLInputElement;
+  if (colorInput) {
+    colorInput.value = stateStore.get<string>('particles.color');
+  }
 }
 
 // Initialize

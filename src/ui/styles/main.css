@@ -215,6 +215,42 @@ html, body {
   gap: 8px;
 }
 
+/* Preset Controls */
+.preset-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.preset-actions .btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-btn {
+  padding: 5px 10px;
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 /* Collapsible Sections */
 .section-header {
   display: flex;

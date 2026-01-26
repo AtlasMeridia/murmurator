@@ -12,6 +12,13 @@ export interface ParameterSnapshot {
   timestamp: number;
 }
 
+export interface PresetFile {
+  version: string;
+  name: string;
+  created: string;
+  settings: Record<string, unknown>;
+}
+
 export class StateStore {
   private parameters: Map<string, unknown> = new Map();
   private listeners: Map<string, Set<StateCallback>> = new Map();
@@ -155,6 +162,64 @@ export class StateStore {
     }
 
     return lines.join('\n');
+  }
+
+  // Export settings to JSON string
+  exportSettings(name: string = 'Untitled'): string {
+    const snapshot = this.getSnapshot();
+    const preset: PresetFile = {
+      version: '1.0',
+      name,
+      created: new Date().toISOString(),
+      settings: snapshot.parameters,
+    };
+    return JSON.stringify(preset, null, 2);
+  }
+
+  // Import settings from JSON string
+  // Returns error message on failure, null on success
+  importSettings(json: string): string | null {
+    try {
+      const parsed = JSON.parse(json);
+
+      // Validate structure
+      if (!parsed || typeof parsed !== 'object') {
+        return 'Invalid preset file format';
+      }
+
+      // Support both full PresetFile format and raw settings object
+      const settings = parsed.settings ?? parsed.parameters ?? parsed;
+
+      if (!settings || typeof settings !== 'object') {
+        return 'No settings found in preset file';
+      }
+
+      // Validate that we have at least some known keys
+      const knownKeys = PARAMETER_DEFINITIONS.map(def => def.key);
+      const settingsKeys = Object.keys(settings);
+      const validKeys = settingsKeys.filter(k => knownKeys.includes(k));
+
+      if (validKeys.length === 0) {
+        return 'Preset contains no recognized parameters';
+      }
+
+      // Apply settings (only valid keys)
+      for (const key of validKeys) {
+        this.set(key, settings[key]);
+      }
+
+      return null; // Success
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Failed to parse preset file';
+    }
+  }
+
+  // Reset all parameters to defaults
+  resetToDefaults(): void {
+    const defaults = getDefaultParameters();
+    for (const [key, value] of Object.entries(defaults)) {
+      this.set(key, value);
+    }
   }
 }
 
