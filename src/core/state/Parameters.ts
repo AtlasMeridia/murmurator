@@ -295,10 +295,21 @@ export const PARAMETER_DEFINITIONS: ParameterDef[] = [
     type: 'number',
     default: 0,
     min: 0,
-    max: 0.2,
+    max: 0.3,
     step: 0.005,
     category: 'rendering',
-    description: 'Trail persistence (0 = off, higher = longer trails)',
+    description: 'Trail amount (0 = none, 0.3 = maximum trails)',
+  },
+  {
+    key: 'rendering.trailIntensity',
+    label: 'Trail Intensity',
+    type: 'number',
+    default: 1.0,
+    min: 0.5,
+    max: 2.0,
+    step: 0.1,
+    category: 'rendering',
+    description: 'Trail persistence (0.5 = short, 2.0 = nearly permanent)',
   },
 
   // Viewport

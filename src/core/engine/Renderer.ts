@@ -199,14 +199,17 @@ export class Renderer {
 
   render(): void {
     const tracerStrength = this.state.get<number>('rendering.tracers') ?? 0;
+    const trailIntensity = this.state.get<number>('rendering.trailIntensity') ?? 1.0;
 
     if (tracerStrength > 0 && this.fadeQuad && this.fadeMaterial) {
       // Enable tracer mode
       this.renderer.autoClear = false;
       this.scene.background = null;
 
-      // Update fade opacity (lower opacity = longer trails)
-      this.fadeMaterial.opacity = 1 - tracerStrength;
+      // Update fade opacity using exponential mapping
+      // k controls decay rate, multiplied by intensity for user adjustment
+      const k = 19.5 * trailIntensity;
+      this.fadeMaterial.opacity = Math.exp(-k * tracerStrength);
       this.fadeQuad.visible = true;
 
       // Render fade quad first (attached to camera so it covers screen)

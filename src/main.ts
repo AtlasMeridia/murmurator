@@ -327,9 +327,9 @@ function setupEventListeners(): void {
 
   document.getElementById('btn-reset')!.addEventListener('click', () => {
     engine.reset();
-    engine.start();
-    playPauseBtn.textContent = '⏸';
-    playPauseBtn.title = 'Pause';
+    engine.stop();
+    playPauseBtn.textContent = '▶';
+    playPauseBtn.title = 'Play';
   });
 
   // Aspect ratio buttons
