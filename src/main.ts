@@ -116,14 +116,15 @@ function createUI(): void {
         </div>
         <div class="section-content" id="section-viewport">
           <div class="aspect-ratio-selector">
-            <button class="btn aspect-ratio-btn active" data-ratio="1:1">1:1</button>
+            <button class="btn aspect-ratio-btn" data-ratio="1:1">1:1</button>
             <button class="btn aspect-ratio-btn" data-ratio="4:5">4:5</button>
+            <button class="btn aspect-ratio-btn active" data-ratio="5:8">5:8</button>
             <button class="btn aspect-ratio-btn" data-ratio="2:3">2:3</button>
             <button class="btn aspect-ratio-btn" data-ratio="9:16">9:16</button>
           </div>
           <div class="orientation-toggle">
-            <button class="active" data-orientation="landscape">Landscape</button>
-            <button data-orientation="portrait">Portrait</button>
+            <button data-orientation="landscape">Landscape</button>
+            <button class="active" data-orientation="portrait">Portrait</button>
           </div>
         </div>
       </div>
