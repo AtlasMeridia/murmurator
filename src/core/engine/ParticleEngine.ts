@@ -405,7 +405,7 @@ export class ParticleEngine {
     if (this.useWebGPU) {
       // GPU physics (async but fire-and-forget in the loop)
       if (this.gpuPhysics && this.gpuRenderer) {
-        this.gpuPhysics.updateSync(this.gpuRenderer, dt);
+        this.gpuPhysics.update(this.gpuRenderer, dt);
       }
 
       // Handle particle lifetime respawning

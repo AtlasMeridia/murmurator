@@ -11,6 +11,7 @@ import {
   If,
   select,
 } from 'three/tsl';
+import type { ComputeNode } from 'three/webgpu';
 import type { GPUParticleBuffer } from './GPUParticleBuffer.ts';
 import type { GPURenderer } from './GPURenderer.ts';
 import type { StateStore } from '../../state/StateStore.ts';
@@ -49,8 +50,8 @@ export class GPUPhysics {
   private boundsUniform = uniform(0); // 0 = wrap, 1 = bounce, 2 = none
   private seedUniform = uniform(Math.random() * 1000);
 
-  // Compute node
-  private computeNode: ReturnType<typeof Fn> | null = null;
+  // Compute dispatch node, built once per particle buffer (uniforms carry per-frame values)
+  private computeNode: ComputeNode | null = null;
   private particleBuffer: GPUParticleBuffer | null = null;
 
   constructor(state: StateStore, config: GPUPhysicsConfig) {
@@ -198,13 +199,13 @@ export class GPUPhysics {
       buffer.velocitiesStorage.element(idx).x.assign(vx);
       buffer.velocitiesStorage.element(idx).y.assign(vy);
       buffer.agesStorage.element(idx).assign(newAge);
-    });
+    })().compute(buffer.count);
   }
 
   /**
    * Update physics simulation.
    */
-  async update(renderer: GPURenderer, deltaTime: number): Promise<void> {
+  update(renderer: GPURenderer, deltaTime: number): void {
     if (!this.computeNode || !this.particleBuffer) {
       return;
     }
@@ -233,17 +234,7 @@ export class GPUPhysics {
     const bounds = this.state.get<string>('simulation.bounds');
     this.boundsUniform.value = bounds === 'wrap' ? 0 : bounds === 'bounce' ? 1 : 2;
 
-    // Execute compute shader
-    // Fn returns a function that takes an array of inputs - use empty array for no inputs
-    const computeCall = (this.computeNode as any)().compute(this.particleBuffer.count);
-    await renderer.compute(computeCall);
-  }
-
-  /**
-   * Synchronous update (schedules async work).
-   */
-  updateSync(renderer: GPURenderer, deltaTime: number): void {
-    this.update(renderer, deltaTime);
+    renderer.compute(this.computeNode);
   }
 
   resize(width: number, height: number): void {

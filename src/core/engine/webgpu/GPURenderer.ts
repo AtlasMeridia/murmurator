@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { WebGPURenderer, MeshBasicNodeMaterial } from 'three/webgpu';
+import type { ComputeNode } from 'three/webgpu';
 import {
   vec3,
   float,
@@ -80,8 +81,10 @@ export class GPURenderer {
 
     await this.renderer.init();
 
-    this.renderer.setSize(this.width, this.height);
+    // Opaque black, so a clear without a following render isn't transparent
+    this.renderer.setClearColor(0x000000, 1);
     this.renderer.setPixelRatio(config.pixelRatio ?? window.devicePixelRatio);
+    this.renderer.setSize(this.width, this.height);
 
     // Create fade quad for tracer effect
     this.createFadeQuad();
@@ -249,7 +252,7 @@ export class GPURenderer {
       this.camera.add(this.fadeQuad);
       this.fadeQuad.position.set(0, 0, -50);
 
-      this.renderer.renderAsync(this.scene, this.camera);
+      this.renderer.render(this.scene, this.camera);
 
       this.camera.remove(this.fadeQuad);
     } else {
@@ -261,7 +264,7 @@ export class GPURenderer {
       if (this.fadeQuad) {
         this.fadeQuad.visible = false;
       }
-      this.renderer.renderAsync(this.scene, this.camera);
+      this.renderer.render(this.scene, this.camera);
     }
   }
 
@@ -284,8 +287,8 @@ export class GPURenderer {
   /**
    * Execute a compute shader.
    */
-  async compute(computeNode: any): Promise<void> {
-    await this.renderer.computeAsync(computeNode);
+  compute(computeNode: ComputeNode): void {
+    this.renderer.compute(computeNode);
   }
 
   dispose(): void {
