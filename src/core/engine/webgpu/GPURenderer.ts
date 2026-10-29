@@ -98,7 +98,8 @@ export class GPURenderer {
   }
 
   private createFadeQuad(): void {
-    const geometry = new THREE.PlaneGeometry(2, 2);
+    // Unit quad scaled to the viewport; drawn before the particles each frame
+    const geometry = new THREE.PlaneGeometry(1, 1);
     this.fadeMaterial = new MeshBasicNodeMaterial({
       colorNode: colorNode(0x000000),
       transparent: true,
@@ -107,9 +108,11 @@ export class GPURenderer {
       depthWrite: false,
     });
     this.fadeQuad = new THREE.Mesh(geometry, this.fadeMaterial);
-    this.fadeQuad.position.z = 50;
+    this.fadeQuad.scale.set(this.width, this.height, 1);
+    this.fadeQuad.renderOrder = -1;
     this.fadeQuad.frustumCulled = false;
     this.fadeQuad.visible = false;
+    this.scene.add(this.fadeQuad);
   }
 
   private createGeometry(shape: ParticleShape): THREE.BufferGeometry {
@@ -231,6 +234,7 @@ export class GPURenderer {
     this.camera.top = halfH;
     this.camera.bottom = -halfH;
     this.camera.updateProjectionMatrix();
+    this.fadeQuad?.scale.set(width, height, 1);
 
     // Update renderer
     this.renderer.setSize(width, height);
@@ -251,13 +255,7 @@ export class GPURenderer {
       this.fadeMaterial.opacity = Math.exp(-k * tracerStrength);
       this.fadeQuad.visible = true;
 
-      // Render fade quad first
-      this.camera.add(this.fadeQuad);
-      this.fadeQuad.position.set(0, 0, -50);
-
       this.renderer.render(this.scene, this.camera);
-
-      this.camera.remove(this.fadeQuad);
     } else {
       // Normal render mode
       this.renderer.autoClear = true;
