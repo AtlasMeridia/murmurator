@@ -355,10 +355,9 @@ export class ParticleEngine {
       this.gpuPhysics?.resetTime();
       this.frameCount = 0;
       this.random = new SeededRandom(Date.now());
-      this.initializeParticlesGPU();
-      if (this.gpuRenderer && this.gpuParticles) {
+      this.initializeParticlesGPU(); // Same buffers, re-uploaded; mesh and compute stay bound
+      if (this.gpuRenderer) {
         this.gpuRenderer.clear();
-        this.gpuRenderer.initializeParticles(this.gpuParticles);
         this.gpuRenderer.render();
       }
     } else {

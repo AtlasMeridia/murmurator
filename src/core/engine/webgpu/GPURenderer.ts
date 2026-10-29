@@ -141,9 +141,12 @@ export class GPURenderer {
   initializeParticles(buffer: GPUParticleBuffer): void {
     this.particleBuffer = buffer;
 
-    // Remove existing particles
+    // Remove existing particles. Detach the shared position buffer first: disposing a
+    // geometry destroys its attributes' GPU buffers, and the physics compute shader
+    // still writes into that one.
     if (this.particles) {
       this.scene.remove(this.particles);
+      this.particles.geometry.deleteAttribute('instancePosition');
       this.particles.geometry.dispose();
       (this.particles.material as THREE.Material).dispose();
     }
