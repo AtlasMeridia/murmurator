@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+*.tsbuildinfo
 
 # IDE
 .vscode/
@@ -18,9 +19,16 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# Local env
+# Local env and machine-specific MCP config (may hold keys)
 .env
 .env.local
+.mcp.json
 
-# Dev notes (keep local)
+# Claude Code worktrees
+.claude/worktrees/
+
+# Exported frames saved into the repo root
+/*.png
+
+# Dev notes (keep local; repo is public)
 _dev/

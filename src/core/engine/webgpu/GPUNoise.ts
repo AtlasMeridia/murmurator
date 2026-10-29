@@ -52,7 +52,7 @@ export const valueNoise2D = /*#__PURE__*/ Fn(([p]: [TSLNode]) => {
   const f = fract(p);
 
   // Smooth interpolation
-  const u = f.mul(f).mul(float(3).sub(f.mul(2)));
+  const u: TSLNode = f.mul(f).mul(float(3).sub(f.mul(2)));
 
   // Four corners
   const a = hash21(i);
@@ -77,7 +77,7 @@ export const valueNoise3D = /*#__PURE__*/ Fn(([p]: [TSLNode]) => {
   const f = fract(p);
 
   // Smooth interpolation
-  const u = f.mul(f).mul(float(3).sub(f.mul(2)));
+  const u: TSLNode = f.mul(f).mul(float(3).sub(f.mul(2)));
 
   // Hash function for 3D
   const hash3 = Fn(([q]: [TSLNode]) => {
