@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { WebGPURenderer, MeshBasicNodeMaterial } from 'three/webgpu';
+import type { ComputeNode } from 'three/webgpu';
 import {
   vec3,
   float,
@@ -80,8 +81,10 @@ export class GPURenderer {
 
     await this.renderer.init();
 
-    this.renderer.setSize(this.width, this.height);
+    // Opaque black, so a clear without a following render isn't transparent
+    this.renderer.setClearColor(0x000000, 1);
     this.renderer.setPixelRatio(config.pixelRatio ?? window.devicePixelRatio);
+    this.renderer.setSize(this.width, this.height);
 
     // Create fade quad for tracer effect
     this.createFadeQuad();
@@ -95,7 +98,8 @@ export class GPURenderer {
   }
 
   private createFadeQuad(): void {
-    const geometry = new THREE.PlaneGeometry(2, 2);
+    // Unit quad scaled to the viewport; drawn before the particles each frame
+    const geometry = new THREE.PlaneGeometry(1, 1);
     this.fadeMaterial = new MeshBasicNodeMaterial({
       colorNode: colorNode(0x000000),
       transparent: true,
@@ -104,9 +108,11 @@ export class GPURenderer {
       depthWrite: false,
     });
     this.fadeQuad = new THREE.Mesh(geometry, this.fadeMaterial);
-    this.fadeQuad.position.z = 50;
+    this.fadeQuad.scale.set(this.width, this.height, 1);
+    this.fadeQuad.renderOrder = -1;
     this.fadeQuad.frustumCulled = false;
     this.fadeQuad.visible = false;
+    this.scene.add(this.fadeQuad);
   }
 
   private createGeometry(shape: ParticleShape): THREE.BufferGeometry {
@@ -138,9 +144,12 @@ export class GPURenderer {
   initializeParticles(buffer: GPUParticleBuffer): void {
     this.particleBuffer = buffer;
 
-    // Remove existing particles
+    // Remove existing particles. Detach the shared position buffer first: disposing a
+    // geometry destroys its attributes' GPU buffers, and the physics compute shader
+    // still writes into that one.
     if (this.particles) {
       this.scene.remove(this.particles);
+      this.particles.geometry.deleteAttribute('instancePosition');
       this.particles.geometry.dispose();
       (this.particles.material as THREE.Material).dispose();
     }
@@ -225,6 +234,7 @@ export class GPURenderer {
     this.camera.top = halfH;
     this.camera.bottom = -halfH;
     this.camera.updateProjectionMatrix();
+    this.fadeQuad?.scale.set(width, height, 1);
 
     // Update renderer
     this.renderer.setSize(width, height);
@@ -245,13 +255,7 @@ export class GPURenderer {
       this.fadeMaterial.opacity = Math.exp(-k * tracerStrength);
       this.fadeQuad.visible = true;
 
-      // Render fade quad first
-      this.camera.add(this.fadeQuad);
-      this.fadeQuad.position.set(0, 0, -50);
-
-      this.renderer.renderAsync(this.scene, this.camera);
-
-      this.camera.remove(this.fadeQuad);
+      this.renderer.render(this.scene, this.camera);
     } else {
       // Normal render mode
       this.renderer.autoClear = true;
@@ -261,7 +265,7 @@ export class GPURenderer {
       if (this.fadeQuad) {
         this.fadeQuad.visible = false;
       }
-      this.renderer.renderAsync(this.scene, this.camera);
+      this.renderer.render(this.scene, this.camera);
     }
   }
 
@@ -284,8 +288,8 @@ export class GPURenderer {
   /**
    * Execute a compute shader.
    */
-  async compute(computeNode: any): Promise<void> {
-    await this.renderer.computeAsync(computeNode);
+  compute(computeNode: ComputeNode): void {
+    this.renderer.compute(computeNode);
   }
 
   dispose(): void {
