@@ -1,5 +1,6 @@
-// Particle Playground - Main Entry Point
+// Murmurator - Main Entry Point
 
+import './ui/styles/colors_and_type.css';
 import './ui/styles/main.css';
 import { ParticleEngine } from './core/engine/ParticleEngine.ts';
 import { stateStore } from './core/state/StateStore.ts';
@@ -10,14 +11,46 @@ import { getParameterDef } from './core/state/Parameters.ts';
 import { ConsoleAPI } from './api/ConsoleAPI.ts';
 import { isWebGPUSupported, isSecureContext, getWebGPUSupportMessage } from './core/engine/webgpu/index.ts';
 import { PRESETS } from './core/state/presets.ts';
+import { icon } from './ui/icons.ts';
 
-// Application state
+// Space kept around the canvas inside the viewport (px, both sides combined)
+const CANVAS_MARGIN = 48;
+// How often the Info readout repaints (ms)
+const STATS_INTERVAL = 250;
+
 let engine: ParticleEngine;
 
-// DOM elements
 const app = document.getElementById('app')!;
 
-// Helper to create slider with input field
+// ─── Markup helpers ───────────────────────────────────────────
+
+function section(id: string, title: string, body: string, collapsed = false): string {
+  const state = collapsed ? ' collapsed' : '';
+  return `
+    <div class="panel-section">
+      <button type="button" class="section-header${state}" data-section="${id}" aria-expanded="${!collapsed}">
+        <span>${title}</span>${icon('chevron')}
+      </button>
+      <div class="section-content${state}" id="section-${id}">
+        <div class="collapse-inner"><div class="section-body">${body}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+function subsection(id: string, title: string, body: string): string {
+  return `
+    <div class="subsection">
+      <button type="button" class="subsection-header collapsed" data-subsection="${id}" aria-expanded="false">
+        <span>${title}</span>${icon('chevron')}
+      </button>
+      <div class="subsection-content collapsed" id="subsection-${id}">
+        <div class="collapse-inner">${body}</div>
+      </div>
+    </div>
+  `;
+}
+
 function createSlider(id: string, stateKey: string, label: string): string {
   const def = getParameterDef(stateKey);
   const value = stateStore.get(stateKey);
@@ -27,412 +60,266 @@ function createSlider(id: string, stateKey: string, label: string): string {
 
   return `
     <div class="slider-control">
-      <label>
+      <label for="slider-${id}">
         <span>${label}</span>
-        <input type="text" class="value-input" id="input-${id}" value="${value}" data-key="${stateKey}">
+        <input type="text" inputmode="decimal" class="value-input" id="input-${id}" value="${value}" data-key="${stateKey}" aria-label="${label}">
       </label>
       <input type="range" id="slider-${id}" min="${min}" max="${max}" step="${step}" value="${value}" data-key="${stateKey}">
     </div>
   `;
 }
 
-// Helper to create enum selector
-function createEnumSelector(id: string, stateKey: string, label: string, options: string[]): string {
-  const currentValue = stateStore.get(stateKey);
-
-  const buttons = options.map(opt =>
-    `<button data-value="${opt}" class="${opt === currentValue ? 'active' : ''}">${opt}</button>`
+function createSegmented(stateKey: string, options: string[], labels: string[] = options): string {
+  const current = stateStore.get(stateKey);
+  const buttons = options.map((opt, i) =>
+    `<button type="button" data-value="${opt}" class="${opt === current ? 'active' : ''}">${labels[i]}</button>`
   ).join('');
+  return `<div class="segmented" data-key="${stateKey}">${buttons}</div>`;
+}
 
+function createEnumField(stateKey: string, label: string, options: string[]): string {
   return `
-    <div class="enum-control">
-      <span class="enum-label">${label}</span>
-      <div class="enum-selector" id="enum-${id}" data-key="${stateKey}">
-        ${buttons}
-      </div>
+    <div class="field">
+      <span class="field-label">${label}</span>
+      ${createSegmented(stateKey, options)}
     </div>
   `;
 }
 
-// Create the UI structure
 function createUI(): void {
-  app.innerHTML = `
-    <div class="viewport" id="viewport">
-      <!-- Canvas will be inserted here -->
+  const viewport = `
+    ${createSegmented('viewport.aspectRatio', ['1:1', '4:5', '5:8', '2:3', '9:16'])}
+    ${createSegmented('viewport.orientation', ['landscape', 'portrait'])}
+  `;
+
+  const info = `
+    <div class="stats">
+      <div class="stats-row"><span>FPS</span><span id="stat-fps">0</span></div>
+      <div class="stats-row"><span>Particles</span><span id="stat-particles">0</span></div>
+      <div class="stats-row"><span>Time</span><span id="stat-time">0.00s</span></div>
+      <div class="stats-row"><span>Mode</span><span id="stat-mode">Loading</span></div>
     </div>
-    <div class="control-panel">
-      <!-- Presets Section -->
-      <div class="panel-section">
-        <div class="section-header" data-section="presets">
-          <div class="section-title">Presets</div>
-          <span class="section-toggle">▼</span>
+  `;
+
+  const particles = `
+    ${createSlider('count', 'particles.count', 'Count')}
+    ${createSlider('size', 'particles.size', 'Size')}
+    <div class="param-row">
+      <label for="input-color">Color</label>
+      <input type="color" id="input-color" value="${stateStore.get('particles.color')}">
+    </div>
+    ${createSlider('opacity', 'particles.opacity', 'Opacity')}
+    ${subsection('particles-advanced', 'Advanced', `
+      ${createSlider('sizeVariation', 'particles.sizeVariation', 'Size variation')}
+      ${createSlider('lifetime', 'particles.lifetime', 'Lifetime (s)')}
+      ${createSlider('initialSpeed', 'particles.initialSpeed', 'Initial speed')}
+      ${createEnumField('particles.spawnMode', 'Spawn mode', ['random', 'center', 'edges', 'grid'])}
+      ${createEnumField('particles.shape', 'Shape', ['circle', 'square', 'triangle', 'ring'])}
+    `)}
+  `;
+
+  const physics = `
+    ${createSlider('noise', 'physics.noise.strength', 'Noise strength')}
+    ${createSlider('tracers', 'rendering.tracers', 'Tracers')}
+    ${createSlider('speed', 'simulation.speed', 'Speed')}
+    ${subsection('physics-advanced', 'Advanced', `
+      ${createSlider('noiseScale', 'physics.noise.scale', 'Noise scale')}
+      ${createSlider('noiseEvolution', 'physics.noise.speed', 'Noise evolution')}
+      ${createSlider('gravityX', 'physics.force.x', 'Gravity X')}
+      ${createSlider('gravityY', 'physics.force.y', 'Gravity Y')}
+      ${createSlider('maxVelocity', 'physics.maxVelocity', 'Max velocity')}
+      ${createSlider('turbulence', 'physics.turbulence', 'Turbulence')}
+      ${createSlider('attraction', 'physics.attractor.strength', 'Attraction')}
+      ${createEnumField('simulation.bounds', 'Bounds', ['wrap', 'bounce', 'none'])}
+      ${createSlider('damping', 'physics.damping', 'Damping')}
+    `)}
+  `;
+
+  const presets = `
+    <div class="preset-actions">
+      <button type="button" class="btn" id="btn-export">Export</button>
+      <button type="button" class="btn" id="btn-import">Import</button>
+      <button type="button" class="btn" id="btn-defaults">Defaults</button>
+      <input type="file" id="import-file" accept=".json" hidden>
+    </div>
+    <div class="preset-list">
+      ${PRESETS.map(p => `<button type="button" class="btn preset-btn" data-preset="${p.name}" title="${p.description}">${p.name}</button>`).join('')}
+    </div>
+  `;
+
+  app.innerHTML = `
+    <div class="viewport" id="viewport"></div>
+    <div class="control-panel mn-chrome">
+      <div class="panel-head">
+        <div class="panel-head-row">
+          <span class="wordmark">Murmurator</span>
+          <span class="run-state" id="run-state">Paused</span>
         </div>
-        <div class="section-content" id="section-presets">
-          <div class="preset-actions">
-            <button class="btn" id="btn-export">Export</button>
-            <button class="btn" id="btn-import">Import</button>
-            <button class="btn" id="btn-defaults">Defaults</button>
-            <input type="file" id="import-file" accept=".json" style="display: none;">
-          </div>
-          <div class="preset-list">
-            ${PRESETS.map(p => `<button class="btn preset-btn" data-preset="${p.name}" title="${p.description}">${p.name}</button>`).join('')}
-          </div>
+        <div class="playback-controls">
+          <button type="button" class="btn btn-icon" id="btn-playpause" title="Play" aria-label="Play">${icon('play')}</button>
+          <button type="button" class="btn btn-icon" id="btn-reset" title="Reset" aria-label="Reset">${icon('reset')}</button>
+          <button type="button" class="btn btn-icon" id="btn-screenshot" title="Download PNG" aria-label="Download PNG">${icon('download')}</button>
         </div>
       </div>
-
-      <!-- Playback Section -->
-      <div class="panel-section">
-        <div class="section-header" data-section="playback">
-          <div class="section-title">Playback</div>
-          <span class="section-toggle">▼</span>
-        </div>
-        <div class="section-content" id="section-playback">
-          <div class="playback-controls">
-            <button class="btn btn-icon" id="btn-playpause" title="Play/Pause">▶</button>
-            <button class="btn btn-icon" id="btn-reset" title="Reset">↺</button>
-          </div>
-          <div class="stats" id="stats">
-            <div class="stats-row">
-              <span>FPS:</span>
-              <span id="stat-fps">0</span>
-            </div>
-            <div class="stats-row">
-              <span>Particles:</span>
-              <span id="stat-particles">0</span>
-            </div>
-            <div class="stats-row">
-              <span>Time:</span>
-              <span id="stat-time">0.00s</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Viewport Section -->
-      <div class="panel-section">
-        <div class="section-header" data-section="viewport">
-          <div class="section-title">Viewport</div>
-          <span class="section-toggle">▼</span>
-        </div>
-        <div class="section-content" id="section-viewport">
-          <div class="aspect-ratio-selector">
-            <button class="btn aspect-ratio-btn" data-ratio="1:1">1:1</button>
-            <button class="btn aspect-ratio-btn" data-ratio="4:5">4:5</button>
-            <button class="btn aspect-ratio-btn active" data-ratio="5:8">5:8</button>
-            <button class="btn aspect-ratio-btn" data-ratio="2:3">2:3</button>
-            <button class="btn aspect-ratio-btn" data-ratio="9:16">9:16</button>
-          </div>
-          <div class="orientation-toggle">
-            <button data-orientation="landscape">Landscape</button>
-            <button class="active" data-orientation="portrait">Portrait</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Particles Section -->
-      <div class="panel-section">
-        <div class="section-header" data-section="particles">
-          <div class="section-title">Particles</div>
-          <span class="section-toggle">▼</span>
-        </div>
-        <div class="section-content" id="section-particles">
-          ${createSlider('count', 'particles.count', 'Count')}
-          ${createSlider('size', 'particles.size', 'Size')}
-          <div class="param-row">
-            <span class="param-label">Color</span>
-            <input type="color" id="input-color" value="${stateStore.get('particles.color')}">
-          </div>
-          ${createSlider('opacity', 'particles.opacity', 'Opacity')}
-
-          <!-- Advanced Particles -->
-          <div class="subsection">
-            <div class="subsection-header collapsed" data-subsection="particles-advanced">
-              <span class="subsection-toggle">▼</span>
-              <span class="subsection-title">Advanced</span>
-            </div>
-            <div class="subsection-content collapsed" id="subsection-particles-advanced">
-              ${createSlider('sizeVariation', 'particles.sizeVariation', 'Size Variation')}
-              ${createSlider('lifetime', 'particles.lifetime', 'Lifetime (s)')}
-              ${createSlider('initialSpeed', 'particles.initialSpeed', 'Initial Speed')}
-              ${createEnumSelector('spawnMode', 'particles.spawnMode', 'Spawn Mode', ['random', 'center', 'edges', 'grid'])}
-              ${createEnumSelector('shape', 'particles.shape', 'Shape', ['circle', 'square', 'triangle', 'ring'])}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Physics Section -->
-      <div class="panel-section">
-        <div class="section-header" data-section="physics">
-          <div class="section-title">Physics</div>
-          <span class="section-toggle">▼</span>
-        </div>
-        <div class="section-content" id="section-physics">
-          ${createSlider('noise', 'physics.noise.strength', 'Noise Strength')}
-          ${createSlider('tracers', 'rendering.tracers', 'Tracers')}
-          ${createSlider('speed', 'simulation.speed', 'Speed')}
-
-          <!-- Advanced Physics -->
-          <div class="subsection">
-            <div class="subsection-header collapsed" data-subsection="physics-advanced">
-              <span class="subsection-toggle">▼</span>
-              <span class="subsection-title">Advanced</span>
-            </div>
-            <div class="subsection-content collapsed" id="subsection-physics-advanced">
-              ${createSlider('noiseScale', 'physics.noise.scale', 'Noise Scale')}
-              ${createSlider('noiseEvolution', 'physics.noise.speed', 'Noise Evolution')}
-              ${createSlider('gravityX', 'physics.force.x', 'Gravity X')}
-              ${createSlider('gravityY', 'physics.force.y', 'Gravity Y')}
-              ${createSlider('maxVelocity', 'physics.maxVelocity', 'Max Velocity')}
-              ${createSlider('turbulence', 'physics.turbulence', 'Turbulence')}
-              ${createSlider('attraction', 'physics.attractor.strength', 'Attraction')}
-              ${createEnumSelector('bounds', 'simulation.bounds', 'Bounds', ['wrap', 'bounce', 'none'])}
-              ${createSlider('damping', 'physics.damping', 'Damping')}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Export Section -->
-      <div class="panel-section">
-        <div class="section-header" data-section="export">
-          <div class="section-title">Export</div>
-          <span class="section-toggle">▼</span>
-        </div>
-        <div class="section-content" id="section-export">
-          <div class="export-controls">
-            <button class="btn" id="btn-screenshot">Screenshot</button>
-          </div>
-        </div>
-      </div>
+      ${section('info', 'Info', info, true)}
+      ${section('viewport', 'Viewport', viewport)}
+      ${section('particles', 'Particles', particles)}
+      ${section('physics', 'Physics', physics)}
+      ${section('presets', 'Presets', presets, true)}
     </div>
   `;
 }
 
-// Calculate canvas dimensions based on aspect ratio and available space
+// ─── Canvas sizing ────────────────────────────────────────────
+
+// Fit the configured aspect ratio inside the viewport
 function calculateCanvasSize(): { width: number; height: number } {
   const viewport = document.getElementById('viewport')!;
-  const availableWidth = viewport.clientWidth - 40; // Padding
-  const availableHeight = viewport.clientHeight - 40;
+  const availableWidth = viewport.clientWidth - CANVAS_MARGIN;
+  const availableHeight = viewport.clientHeight - CANVAS_MARGIN;
 
-  const ratioStr = stateStore.get<string>('viewport.aspectRatio');
-  const orientation = stateStore.get<string>('viewport.orientation');
-
-  let ratio = parseAspectRatio(ratioStr);
+  let ratio = parseAspectRatio(stateStore.get<string>('viewport.aspectRatio'));
   // Ratios like 9:16, 2:3 are portrait by default (width < height)
-  // Invert for landscape orientation
-  if (orientation === 'landscape') {
+  if (stateStore.get<string>('viewport.orientation') === 'landscape') {
     ratio = 1 / ratio;
   }
 
-  let width: number, height: number;
+  const heightBound = availableWidth / availableHeight > ratio;
+  const width = heightBound ? availableHeight * ratio : availableWidth;
+  const height = heightBound ? availableHeight : availableWidth / ratio;
 
-  if (availableWidth / availableHeight > ratio) {
-    // Height constrained
-    height = availableHeight;
-    width = height * ratio;
-  } else {
-    // Width constrained
-    width = availableWidth;
-    height = width / ratio;
-  }
-
-  return {
-    width: Math.floor(width),
-    height: Math.floor(height),
-  };
+  return { width: Math.floor(width), height: Math.floor(height) };
 }
 
-// Initialize the particle engine
-async function initEngine(): Promise<void> {
-  const viewport = document.getElementById('viewport')!;
+function resizeCanvas(): void {
   const { width, height } = calculateCanvasSize();
+  engine.resize(width, height);
+}
 
-  // Show initial loading status
-  const statsDiv = document.getElementById('stats');
-  if (statsDiv) {
-    const modeRow = document.createElement('div');
-    modeRow.className = 'stats-row';
-    modeRow.innerHTML = `
-      <span>Mode:</span>
-      <span id="stat-mode" style="color: #94a3b8">Loading...</span>
-    `;
-    statsDiv.appendChild(modeRow);
-  }
+// ─── Engine ───────────────────────────────────────────────────
 
-  // Log basic support info
-  const basicSupport = isWebGPUSupported();
-  const secureCtx = isSecureContext();
-  console.log(`WebGPU API present: ${basicSupport}, Secure context: ${secureCtx}`);
+async function initEngine(): Promise<void> {
+  console.log(`WebGPU API present: ${isWebGPUSupported()}, Secure context: ${isSecureContext()}`);
 
-  engine = new ParticleEngine(stateStore, {
-    width,
-    height,
-  });
+  engine = new ParticleEngine(stateStore, calculateCanvasSize());
 
   // Wait for async initialization (WebGPU with fallback)
   await engine.ready();
 
-  // Update mode indicator based on actual mode
-  const actualMode = engine.isWebGPUMode();
-  const modeSpan = document.getElementById('stat-mode');
-  if (modeSpan) {
-    modeSpan.textContent = actualMode ? 'WebGPU' : 'WebGL';
-    modeSpan.style.color = actualMode ? '#4ade80' : '#fbbf24';
-  }
+  const gpu = engine.isWebGPUMode();
+  const modeSpan = document.getElementById('stat-mode')!;
+  modeSpan.textContent = gpu ? 'WebGPU' : 'WebGL';
+  modeSpan.className = gpu ? 'mode-gpu' : 'mode-cpu';
+  console.log(gpu ? 'WebGPU initialized: GPU compute physics' : 'WebGL fallback: CPU physics');
 
-  console.log(actualMode
-    ? '🚀 WebGPU initialized - using GPU compute for physics'
-    : '⚠️ Using WebGL fallback - CPU physics'
-  );
-
-  viewport.appendChild(engine.getCanvas());
+  document.getElementById('viewport')!.appendChild(engine.getCanvas());
   engine.start();
 }
 
-// Setup event listeners
+// Reflect engine run state in the panel head
+function syncPlayState(): void {
+  const running = engine.isRunning();
+  const btn = document.getElementById('btn-playpause')!;
+  const label = running ? 'Pause' : 'Play';
+  btn.innerHTML = icon(running ? 'pause' : 'play');
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+
+  const runState = document.getElementById('run-state')!;
+  runState.textContent = running ? 'Running' : 'Paused';
+  runState.classList.toggle('running', running);
+}
+
+// ─── Event wiring ─────────────────────────────────────────────
+
+function toggleCollapse(header: HTMLElement, content: HTMLElement): void {
+  const collapsed = header.classList.toggle('collapsed');
+  content.classList.toggle('collapsed', collapsed);
+  header.setAttribute('aria-expanded', String(!collapsed));
+}
+
 function setupEventListeners(): void {
-  // Collapsible sections
-  document.querySelectorAll('.section-header').forEach(header => {
-    header.addEventListener('click', () => {
-      const sectionName = (header as HTMLElement).dataset.section!;
-      const content = document.getElementById(`section-${sectionName}`)!;
-      header.classList.toggle('collapsed');
-      content.classList.toggle('collapsed');
-    });
+  document.querySelectorAll<HTMLElement>('.section-header').forEach(header => {
+    header.addEventListener('click', () =>
+      toggleCollapse(header, document.getElementById(`section-${header.dataset.section}`)!));
   });
 
-  // Collapsible subsections
-  document.querySelectorAll('.subsection-header').forEach(header => {
-    header.addEventListener('click', () => {
-      const subsectionName = (header as HTMLElement).dataset.subsection!;
-      const content = document.getElementById(`subsection-${subsectionName}`)!;
-      header.classList.toggle('collapsed');
-      content.classList.toggle('collapsed');
-    });
+  document.querySelectorAll<HTMLElement>('.subsection-header').forEach(header => {
+    header.addEventListener('click', () =>
+      toggleCollapse(header, document.getElementById(`subsection-${header.dataset.subsection}`)!));
   });
 
-  // Playback controls
-  const playPauseBtn = document.getElementById('btn-playpause')!;
-  playPauseBtn.addEventListener('click', () => {
-    if (engine.isRunning()) {
-      engine.stop();
-      playPauseBtn.textContent = '▶';
-      playPauseBtn.title = 'Play';
-    } else {
-      engine.start();
-      playPauseBtn.textContent = '⏸';
-      playPauseBtn.title = 'Pause';
-    }
+  // Playback
+  document.getElementById('btn-playpause')!.addEventListener('click', () => {
+    if (engine.isRunning()) engine.stop();
+    else engine.start();
   });
 
   document.getElementById('btn-reset')!.addEventListener('click', () => {
     engine.reset();
     engine.stop();
-    playPauseBtn.textContent = '▶';
-    playPauseBtn.title = 'Play';
   });
 
-  // Aspect ratio buttons
-  document.querySelectorAll('.aspect-ratio-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const target = e.target as HTMLButtonElement;
-      const ratio = target.dataset.ratio!;
+  document.getElementById('btn-screenshot')!.addEventListener('click', takeScreenshot);
 
-      document.querySelectorAll('.aspect-ratio-btn').forEach(b => b.classList.remove('active'));
-      target.classList.add('active');
+  // Engine state can also change from the console API
+  eventBus.subscribe(EventTypes.ENGINE_STATE, syncPlayState);
 
-      stateStore.set('viewport.aspectRatio', ratio);
-      resizeCanvas();
-    });
-  });
-
-  // Orientation toggle
-  document.querySelectorAll('.orientation-toggle button').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const target = e.target as HTMLButtonElement;
-      const orientation = target.dataset.orientation!;
-
-      document.querySelectorAll('.orientation-toggle button').forEach(b => b.classList.remove('active'));
-      target.classList.add('active');
-
-      stateStore.set('viewport.orientation', orientation);
-      resizeCanvas();
-    });
-  });
-
-  // All sliders with input fields
-  document.querySelectorAll('.slider-control input[type="range"]').forEach(slider => {
-    const rangeInput = slider as HTMLInputElement;
+  // Sliders with paired text inputs
+  document.querySelectorAll<HTMLInputElement>('.slider-control input[type="range"]').forEach(rangeInput => {
     const stateKey = rangeInput.dataset.key!;
-    const id = rangeInput.id.replace('slider-', '');
-    const textInput = document.getElementById(`input-${id}`) as HTMLInputElement;
+    const textInput = document.getElementById(rangeInput.id.replace('slider-', 'input-')) as HTMLInputElement;
+    const def = getParameterDef(stateKey);
+    const isInteger = stateKey === 'particles.count';
 
-    // Range slider changes
     rangeInput.addEventListener('input', () => {
-      const def = getParameterDef(stateKey);
-      const isInteger = stateKey === 'particles.count';
       const value = isInteger ? parseInt(rangeInput.value) : parseFloat(rangeInput.value);
       textInput.value = formatValue(value, def?.step);
       stateStore.set(stateKey, value);
     });
 
-    // Text input changes
     textInput.addEventListener('change', () => {
-      const def = getParameterDef(stateKey);
       let value = parseFloat(textInput.value);
-
-      // Clamp to min/max
+      if (Number.isNaN(value)) value = stateStore.get<number>(stateKey);
       if (def?.min !== undefined) value = Math.max(def.min, value);
       if (def?.max !== undefined) value = Math.min(def.max, value);
-
-      if (stateKey === 'particles.count') value = Math.round(value);
+      if (isInteger) value = Math.round(value);
 
       textInput.value = formatValue(value, def?.step);
       rangeInput.value = value.toString();
       stateStore.set(stateKey, value);
     });
 
-    // Select all on focus for easy typing
     textInput.addEventListener('focus', () => textInput.select());
   });
 
-  // Enum selectors
-  document.querySelectorAll('.enum-selector').forEach(selector => {
-    const stateKey = (selector as HTMLElement).dataset.key!;
-
-    selector.querySelectorAll('button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const value = (btn as HTMLElement).dataset.value!;
-
-        selector.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        stateStore.set(stateKey, value);
-      });
+  // Segmented controls (enums, aspect ratio, orientation)
+  document.querySelectorAll<HTMLElement>('.segmented').forEach(group => {
+    group.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-value]');
+      if (btn) stateStore.set(group.dataset.key!, btn.dataset.value!);
     });
   });
 
-  // Color picker
+  // Keep segmented controls and canvas in sync with state from any source
+  // (UI, presets, import, console API)
+  stateStore.subscribeAll((key, value) => {
+    document.querySelectorAll<HTMLElement>(`.segmented[data-key="${key}"] button`).forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === value);
+    });
+  });
+  stateStore.subscribe('viewport.aspectRatio', resizeCanvas);
+  stateStore.subscribe('viewport.orientation', resizeCanvas);
+
   document.getElementById('input-color')!.addEventListener('input', (e) => {
     stateStore.set('particles.color', (e.target as HTMLInputElement).value);
   });
 
-  // Screenshot
-  document.getElementById('btn-screenshot')!.addEventListener('click', takeScreenshot);
-
-  // Preset controls
   setupPresetControls();
 
-  // Window resize
-  window.addEventListener('resize', () => {
-    resizeCanvas();
-  });
+  window.addEventListener('resize', resizeCanvas);
 
-  // Stats update
-  eventBus.subscribe(EventTypes.ENGINE_FRAME, (info: { time: number; deltaTime: number; frameCount: number }) => {
-    updateStats(info);
-  });
+  setupStats();
 }
 
 // Format value based on step precision
@@ -444,29 +331,45 @@ function formatValue(value: number, step?: number): string {
   return value.toFixed(decimals);
 }
 
-function resizeCanvas(): void {
-  const { width, height } = calculateCanvasSize();
-  engine.resize(width, height);
+// ─── Info readout ─────────────────────────────────────────────
+
+function setupStats(): void {
+  const fpsEl = document.getElementById('stat-fps')!;
+  const timeEl = document.getElementById('stat-time')!;
+  const particlesEl = document.getElementById('stat-particles')!;
+
+  const showCount = () => { particlesEl.textContent = stateStore.get<number>('particles.count').toString(); };
+  showCount();
+  stateStore.subscribe('particles.count', showCount);
+
+  let frames = 0;
+  let windowStart = performance.now();
+  let lastPaint = 0;
+
+  eventBus.subscribe(EventTypes.ENGINE_FRAME, (info: { time: number }) => {
+    frames++;
+    const now = performance.now();
+    if (now - windowStart >= 1000) {
+      fpsEl.textContent = Math.round(frames * 1000 / (now - windowStart)).toString();
+      frames = 0;
+      windowStart = now;
+    }
+    if (now - lastPaint >= STATS_INTERVAL) {
+      timeEl.textContent = info.time.toFixed(2) + 's';
+      lastPaint = now;
+    }
+  });
 }
 
-// FPS calculation
-let lastFpsUpdate = 0;
-let framesSinceLastUpdate = 0;
-let currentFps = 0;
+// ─── Downloads & presets ──────────────────────────────────────
 
-function updateStats(info: { time: number; deltaTime: number; frameCount: number }): void {
-  framesSinceLastUpdate++;
-
-  const now = performance.now();
-  if (now - lastFpsUpdate >= 1000) {
-    currentFps = framesSinceLastUpdate;
-    framesSinceLastUpdate = 0;
-    lastFpsUpdate = now;
-  }
-
-  document.getElementById('stat-fps')!.textContent = currentFps.toString();
-  document.getElementById('stat-particles')!.textContent = stateStore.get<number>('particles.count').toString();
-  document.getElementById('stat-time')!.textContent = info.time.toFixed(2) + 's';
+function download(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function takeScreenshot(): void {
@@ -474,161 +377,104 @@ function takeScreenshot(): void {
   if (wasRunning) engine.stop();
 
   engine.toBlob((blob) => {
-    if (blob) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `particle-${Date.now()}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+    if (blob) download(blob, `murmurator-${Date.now()}.png`);
     if (wasRunning) engine.start();
   });
 }
 
-// Setup preset import/export controls
 function setupPresetControls(): void {
   const importInput = document.getElementById('import-file') as HTMLInputElement;
 
-  // Export button
   document.getElementById('btn-export')!.addEventListener('click', () => {
-    const name = prompt('Preset name:', 'My Preset') || 'Untitled';
+    const name = prompt('Preset name:', 'My preset') || 'Untitled';
     const json = stateStore.exportSettings(name);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `murmurator-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    download(new Blob([json], { type: 'application/json' }), `murmurator-${slug}-${Date.now()}.json`);
   });
 
-  // Import button
-  document.getElementById('btn-import')!.addEventListener('click', () => {
-    importInput.click();
-  });
+  document.getElementById('btn-import')!.addEventListener('click', () => importInput.click());
 
-  // File input change handler
-  importInput.addEventListener('change', () => {
+  importInput.addEventListener('change', async () => {
     const file = importInput.files?.[0];
+    importInput.value = ''; // Allow re-importing the same file
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const error = stateStore.importSettings(reader.result as string);
-      if (error) {
-        alert(`Import failed: ${error}`);
-      } else {
-        updateUIFromState();
-        engine.reset(); // Clear canvas and respawn particles
-      }
-    };
-    reader.readAsText(file);
-    importInput.value = ''; // Reset for next import
-  });
-
-  // Defaults button
-  document.getElementById('btn-defaults')!.addEventListener('click', () => {
-    if (confirm('Reset all parameters to defaults?')) {
-      stateStore.resetToDefaults();
-      updateUIFromState();
-      engine.reset(); // Clear canvas and respawn particles
+    const error = stateStore.importSettings(await file.text());
+    if (error) {
+      alert(`Import failed: ${error}`);
+    } else {
+      applyStateChange();
     }
   });
 
-  // Built-in preset buttons
-  document.querySelectorAll('.preset-btn').forEach(btn => {
+  document.getElementById('btn-defaults')!.addEventListener('click', () => {
+    if (confirm('Reset all parameters to defaults?')) {
+      stateStore.resetToDefaults();
+      applyStateChange();
+    }
+  });
+
+  document.querySelectorAll<HTMLElement>('.preset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const presetName = (btn as HTMLElement).dataset.preset!;
-      const preset = PRESETS.find(p => p.name === presetName);
-      if (preset) {
-        for (const [key, value] of Object.entries(preset.settings)) {
-          stateStore.set(key, value);
-        }
-        updateUIFromState();
-        engine.reset(); // Clear canvas and respawn particles
+      const preset = PRESETS.find(p => p.name === btn.dataset.preset);
+      if (!preset) return;
+      for (const [key, value] of Object.entries(preset.settings)) {
+        stateStore.set(key, value);
       }
+      applyStateChange();
     });
   });
 }
 
-// Update all UI controls to match current state
+// After a bulk state change: refresh inputs, clear canvas, respawn particles
+function applyStateChange(): void {
+  updateUIFromState();
+  engine.reset();
+}
+
+// Sync slider and color inputs to current state (segmented controls sync via subscription)
 function updateUIFromState(): void {
-  // Update sliders and their input fields
-  document.querySelectorAll('.slider-control input[type="range"]').forEach(slider => {
-    const rangeInput = slider as HTMLInputElement;
+  document.querySelectorAll<HTMLInputElement>('.slider-control input[type="range"]').forEach(rangeInput => {
     const stateKey = rangeInput.dataset.key!;
-    const id = rangeInput.id.replace('slider-', '');
-    const textInput = document.getElementById(`input-${id}`) as HTMLInputElement;
-    const def = getParameterDef(stateKey);
-
-    const value = stateStore.get(stateKey);
+    const textInput = document.getElementById(rangeInput.id.replace('slider-', 'input-')) as HTMLInputElement;
+    const value = stateStore.get<number>(stateKey);
     rangeInput.value = String(value);
-    textInput.value = formatValue(value as number, def?.step);
+    textInput.value = formatValue(value, getParameterDef(stateKey)?.step);
   });
 
-  // Update enum selectors
-  document.querySelectorAll('.enum-selector').forEach(selector => {
-    const stateKey = (selector as HTMLElement).dataset.key!;
-    const currentValue = stateStore.get(stateKey);
-
-    selector.querySelectorAll('button').forEach(btn => {
-      const btnValue = (btn as HTMLElement).dataset.value!;
-      btn.classList.toggle('active', btnValue === currentValue);
-    });
-  });
-
-  // Update color picker
-  const colorInput = document.getElementById('input-color') as HTMLInputElement;
-  if (colorInput) {
-    colorInput.value = stateStore.get<string>('particles.color');
-  }
+  (document.getElementById('input-color') as HTMLInputElement).value = stateStore.get<string>('particles.color');
 }
 
-// Initialize
+// ─── Boot ─────────────────────────────────────────────────────
+
+function showInitError(error: unknown): void {
+  const viewport = document.getElementById('viewport');
+  if (!viewport) return;
+
+  const panel = document.createElement('div');
+  panel.className = 'init-error';
+  const heading = document.createElement('h2');
+  heading.textContent = 'Initialization error';
+  const message = document.createElement('p');
+  message.textContent = error instanceof Error ? error.message : 'Failed to initialize the particle engine.';
+  const hint = document.createElement('p');
+  hint.className = 'hint';
+  hint.textContent = getWebGPUSupportMessage();
+  panel.append(heading, message, hint);
+  viewport.replaceChildren(panel);
+}
+
 async function init(): Promise<void> {
   createUI();
   await initEngine();
   setupEventListeners();
+  syncPlayState();
 
-  // Expose debugging API
-  const consoleApi = new ConsoleAPI(engine!, stateStore, eventBus);
-  (window as any).murmurator = consoleApi;
-
-  // Initial stats
-  document.getElementById('stat-particles')!.textContent = stateStore.get<number>('particles.count').toString();
-
-  // Set initial play/pause button state (engine starts running)
-  document.getElementById('btn-playpause')!.textContent = '⏸';
-  document.getElementById('btn-playpause')!.title = 'Pause';
+  // Debugging API
+  window.murmurator = new ConsoleAPI(engine, stateStore, eventBus);
 }
 
-// Run initialization
 init().catch((error) => {
   console.error('Failed to initialize:', error);
-
-  // Show error message to user
-  const viewport = document.getElementById('viewport');
-  if (viewport) {
-    viewport.innerHTML = `
-      <div style="
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: #ef4444;
-        text-align: center;
-        padding: 20px;
-      ">
-        <h2 style="margin-bottom: 10px;">Initialization Error</h2>
-        <p style="color: #94a3b8; max-width: 400px;">
-          ${error.message || 'Failed to initialize the particle engine.'}
-        </p>
-        <p style="color: #64748b; font-size: 0.875rem; margin-top: 20px;">
-          ${getWebGPUSupportMessage()}
-        </p>
-      </div>
-    `;
-  }
+  showInitError(error);
 });
