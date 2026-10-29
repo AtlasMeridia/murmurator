@@ -46,7 +46,7 @@ Murmurator simulates thousands of particles moving through a 2D flow field. Each
 | Parameter | Key | Default | Range | Effect |
 |-----------|-----|---------|-------|--------|
 | Gravity X | `physics.force.x` | 0 | -2–2 | Constant horizontal force (positive = right) |
-| Gravity Y | `physics.force.y` | 0 | -2–2 | Constant vertical force (positive = down in screen space) |
+| Gravity Y | `physics.force.y` | 0 | -2–2 | Constant vertical force (negative = down) |
 | Attractor Strength | `physics.attractor.strength` | 0 | -2–2 | Pull toward attractor point. Negative = repel |
 | Attractor X | `physics.attractor.x` | 0 | -1–1 | Normalized X position (-1 = left edge, 1 = right edge) |
 | Attractor Y | `physics.attractor.y` | 0 | -1–1 | Normalized Y position (-1 = top, 1 = bottom) |
@@ -75,7 +75,7 @@ Murmurator simulates thousands of particles moving through a 2D flow field. Each
 
 | Parameter | Key | Default | Range | Effect |
 |-----------|-----|---------|-------|--------|
-| Tracers | `rendering.tracers` | 0 | 0–0.2 | Trail persistence. 0 = no trails, higher = longer fading trails |
+| Tracers | `rendering.tracers` | 0 | 0–0.3 | Trail persistence. 0 = no trails, higher = longer fading trails |
 
 ---
 
@@ -157,61 +157,87 @@ Understanding how parameters combine is key to creating specific effects.
 
 ## Recipes
 
-Suggested starting points for common effects.
+The built-in presets. Each applies over the defaults (color, shape and
+aspect ratio are left as they are), so anything not listed is at its default.
 
-### Calm Flow
-Gentle, meditative movement.
+### Calm flow
+Slow drift along a gently changing flow field.
 ```
-noise.strength: 0.5
+particles.count: 2500
+particles.size: 1
+particles.opacity: 0.5
+noise.strength: 0.4
 noise.scale: 0.003
 noise.speed: 0.0005
-damping: 0.99
-turbulence: 0
-tracers: 0.05
+damping: 0.95
+tracers: 0.1
+simulation.speed: 0.08
 ```
 
 ### Swarm
-Particles cluster and orbit a point.
+Particles pulled into a churning cluster at the center.
 ```
-attractor.strength: 1.5
-attractor.x: 0
-attractor.y: 0
-damping: 0.95
-noise.strength: 0.3
-turbulence: 0.1
+particles.size: 1.5
+attractor.strength: 2
+noise.strength: 0.25
+noise.scale: 0.012
+noise.speed: 0.004
+damping: 0.94
+tracers: 0.07
+simulation.speed: 0.15
 ```
 
-### Vortex
-Spiral patterns around center.
+### Orbit
+Low-friction fall toward the center, overshooting into converging strands.
+There is no tangential force, so particles swing through the attractor
+rather than circling it.
 ```
-attractor.strength: 0.8
-noise.strength: 1.5
-noise.scale: 0.008
-damping: 0.97
-force.x: 0.3  // Creates rotation
+particles.count: 3000
+particles.size: 1
+particles.opacity: 0.6
+particles.initialSpeed: 2
+attractor.strength: 1
+noise.strength: 0.05
+noise.scale: 0.005
+damping: 0.995
+maxVelocity: 6
+tracers: 0.1
+simulation.speed: 0.12
 ```
 
 ### Chaos
-Erratic, unpredictable motion.
+Strong, fast-shifting flow that tears particles into sheets.
 ```
-noise.strength: 3
-noise.scale: 0.02
-noise.speed: 0.005
-turbulence: 0.5
-damping: 0.95
-maxVelocity: 20
+particles.count: 3000
+particles.size: 1
+particles.opacity: 0.7
+noise.strength: 2
+noise.scale: 0.01
+noise.speed: 0.003
+damping: 0.96
+maxVelocity: 12
+tracers: 0.08
+simulation.speed: 0.2
 ```
 
 ### Rain
-Particles falling downward.
+Particles falling downward in long streaks.
 ```
-force.y: 1.5
-noise.strength: 0.2
-noise.scale: 0.01
-damping: 0.99
+particles.count: 2500
+particles.size: 1
+particles.opacity: 0.7
+force.x: 0.1
+force.y: -2
+noise.strength: 0.04
+noise.scale: 0.004
+noise.speed: 0.001
+damping: 0.98
 bounds: wrap
-spawnMode: edges
+tracers: 0.12
+simulation.speed: 0.12
 ```
+
+Two more starting points that aren't built in:
 
 ### Explosion (Outward)
 Particles blast outward from center.

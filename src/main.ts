@@ -10,7 +10,7 @@ import { parseAspectRatio } from './utils/math.ts';
 import { getParameterDef } from './core/state/Parameters.ts';
 import { ConsoleAPI } from './api/ConsoleAPI.ts';
 import { isWebGPUSupported, isSecureContext, getWebGPUSupportMessage } from './core/engine/webgpu/index.ts';
-import { PRESETS } from './core/state/presets.ts';
+import { PRESETS, resolvePreset } from './core/state/presets.ts';
 import { icon } from './ui/icons.ts';
 
 // Space kept around the canvas inside the viewport (px, both sides combined)
@@ -418,7 +418,7 @@ function setupPresetControls(): void {
     btn.addEventListener('click', () => {
       const preset = PRESETS.find(p => p.name === btn.dataset.preset);
       if (!preset) return;
-      for (const [key, value] of Object.entries(preset.settings)) {
+      for (const [key, value] of Object.entries(resolvePreset(preset))) {
         stateStore.set(key, value);
       }
       applyStateChange();
